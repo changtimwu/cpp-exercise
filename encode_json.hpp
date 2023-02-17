@@ -20,6 +20,8 @@
 #include "rapidjson/schema.h"
 #include "rapidjson/prettywriter.h"
 
+#include "bmpsutils.hpp"
+
 namespace encode_json
 {
     void encode_bbox(rapidjson::Value& object_json, rapidjson::Document::AllocatorType& allocator, HailoBBox bbox);
@@ -30,6 +32,9 @@ namespace encode_json
     void encode_tile(rapidjson::Value& object_json, rapidjson::Document::AllocatorType& allocator, HailoTileROIPtr tile);
     void encode_unique_id(rapidjson::Value& object_json, rapidjson::Document::AllocatorType& allocator, HailoUniqueIDPtr id);
     rapidjson::Value encode_mask(rapidjson::Document::AllocatorType& allocator, HailoMaskPtr mask);
+    rapidjson::Value encode_mask_bmp1b(rapidjson::Document::AllocatorType& allocator, HailoConfClassMaskPtr mask);
+    rapidjson::Value encode_mask_bmp8b(rapidjson::Document::AllocatorType& allocator, HailoClassMaskPtr mask);
+
     void encode_depth_mask(rapidjson::Value& object_json, rapidjson::Document::AllocatorType& allocator, HailoDepthMaskPtr mask);
     void encode_class_mask(rapidjson::Value& object_json, rapidjson::Document::AllocatorType& allocator, HailoClassMaskPtr mask);
     void encode_conf_class_mask(rapidjson::Value& object_json, rapidjson::Document::AllocatorType& allocator, HailoConfClassMaskPtr mask);
@@ -192,10 +197,56 @@ namespace encode_json
         for (uint i=0; i < data.size(); i++)
             data_array.PushBack(rapidjson::Value(data[i]), allocator);
         entry_object.AddMember( "data", data_array, allocator );
-
         return entry_object;
     }
 
+    inline rapidjson::Value encode_mask_bmp1b(rapidjson::Document::AllocatorType& allocator, HailoConfClassMaskPtr mask) {
+        rapidjson::Value entry_object( rapidjson::kObjectType );
+        int w  = mask->get_width();
+        int h = mask->get_height();
+        // Prepare the json values of the feilds
+        rapidjson::Value mask_width( mask->get_width() );
+        rapidjson::Value mask_height( mask->get_height() );
+        rapidjson::Value transparency( mask->get_transparency() );
+
+        // Add feilds to the mask entry
+        entry_object.AddMember( "mask_width", mask_width, allocator );
+        entry_object.AddMember( "mask_height", mask_height, allocator );
+        entry_object.AddMember( "transparency", transparency, allocator );
+
+        /* TODO: it seems below code quite a lot overhead.  Any more optimal way? */
+        std::string b64s="";
+        rapidjson::Value datastr(rapidjson::kStringType);
+        std::vector<float> data = mask->get_data();
+        encode_bmp1b_b64( w, h, data, b64s);
+        datastr.SetString( b64s.c_str(), b64s.length(), allocator);
+        entry_object.AddMember( "datab64", datastr, allocator);
+        return entry_object;
+    }
+
+    inline rapidjson::Value encode_mask_bmp8b(rapidjson::Document::AllocatorType& allocator, HailoClassMaskPtr mask) {
+        rapidjson::Value entry_object( rapidjson::kObjectType );
+
+        // Prepare the json values of the feilds
+        rapidjson::Value mask_width( mask->get_width() );
+        rapidjson::Value mask_height( mask->get_height() );
+        rapidjson::Value transparency( mask->get_transparency() );
+
+        // Add feilds to the mask entry
+        entry_object.AddMember( "mask_width", mask_width, allocator );
+        entry_object.AddMember( "mask_height", mask_height, allocator );
+        entry_object.AddMember( "transparency", transparency, allocator );
+
+        /* TODO: it seems below code quite a lot overhead.  Any more optimal way? */
+        std::string b64s="";
+        rapidjson::Value datastr(rapidjson::kStringType);
+        std::vector<uint8_t> data = mask->get_data();
+        encode_bmp8b_b64( data, b64s);
+        datastr.SetString( b64s.c_str(), b64s.length(), allocator);
+        entry_object.AddMember( "datab64", datastr, allocator);
+        return entry_object;
+    }
+ 
     inline void encode_depth_mask(rapidjson::Value& object_json, rapidjson::Document::AllocatorType& allocator, HailoDepthMaskPtr mask)
     {
         rapidjson::Value entry_object = encode_mask(allocator, mask);
@@ -206,7 +257,7 @@ namespace encode_json
 
     inline void encode_class_mask(rapidjson::Value& object_json, rapidjson::Document::AllocatorType& allocator, HailoClassMaskPtr mask)
     {
-        rapidjson::Value entry_object = encode_mask(allocator, mask);
+        rapidjson::Value entry_object = encode_mask_bmp8b(allocator, mask);
 
         // Add this mask object to the parent
         object_json.AddMember("HailoClassMask", entry_object, allocator);
@@ -214,7 +265,7 @@ namespace encode_json
 
     inline void encode_conf_class_mask(rapidjson::Value& object_json, rapidjson::Document::AllocatorType& allocator, HailoConfClassMaskPtr mask)
     {
-        rapidjson::Value entry_object = encode_mask(allocator, mask);
+        rapidjson::Value entry_object = encode_mask_bmp1b(allocator, mask);
 
         rapidjson::Value class_id( mask->get_class_id() );
         entry_object.AddMember( "class_id", class_id, allocator );
